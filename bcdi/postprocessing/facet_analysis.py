@@ -18,8 +18,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
-from typing import Sequence, Union
+from typing import Tuple, Union
 import vtk
+
+from bcdi.utils import validation as valid
 
 
 class Facets:
@@ -54,11 +56,43 @@ class Facets:
         pathdir : str = "./",
         lattice : float = 3.912,
     ) -> None:
-        super(Facets, self).__init__()
+        # Create other required parameters with default None value
+        self.nb_facets = None
+        self.vtk_data = None
+        self.strain_mean_facets = None
+        self.disp_mean_facets = None
+        self.field_data = None
+        self.u0 = None
+        self.v0 = None
+        self.w0 = None
+        self.u = None
+        self.v = None
+        self.norm_u = None
+        self.norm_v = None
+        self.norm_w = None
+        self.rotation_matrix = None
+        self.hkl_reference = None
+        self.hkls = None
+        self.planar_dist = None
+        self.ref_normal = None
+        self.theoretical_angles = None
+
+        # Check input parameters
+        valid.valid_container(
+            filename,
+            container_types=str,
+            min_length=1,
+            name="filename"
+        )
+        valid.valid_container(
+            pathdir,
+            container_types=str,
+            min_length=1,
+            name="pathdir")
+        valid.valid_item(lattice, allowed_types=float, min_excluded=0, name="lattice")
         self.pathsave = pathdir + "facets_analysis/"
         self.path_to_data = pathdir + filename
         self.filename = filename
-
         self.lattice = lattice
 
         # Plotting options
@@ -156,7 +190,7 @@ class Facets:
 
         # Get point data
         try:
-            pointData = vtkdata.GetPointData()
+            point_data = vtkdata.GetPointData()
             print("Loading data...")
         except AttributeError:
             raise NameError("This file does not exist or is not right.")
@@ -164,35 +198,29 @@ class Facets:
         print("Number of points = %s" % str(vtkdata.GetNumberOfPoints()))
         print("Number of cells = %s" % str(vtkdata.GetNumberOfCells()))
 
-        self.vtk_data = {}
-
-        self.vtk_data["x"] = [
-            vtkdata.GetPoint(i)[0] for i in range(vtkdata.GetNumberOfPoints())
-        ]
-        self.vtk_data["y"] = [
-            vtkdata.GetPoint(i)[1] for i in range(vtkdata.GetNumberOfPoints())
-        ]
-        self.vtk_data["z"] = [
-            vtkdata.GetPoint(i)[2] for i in range(vtkdata.GetNumberOfPoints())
-        ]
-        self.vtk_data["strain"] = [
-            pointData.GetArray("strain").GetValue(i)
-            for i in range(vtkdata.GetNumberOfPoints())
-        ]
-        self.vtk_data["disp"] = [
-            pointData.GetArray("disp").GetValue(i)
-            for i in range(vtkdata.GetNumberOfPoints())
-        ]
+        self.vtk_data = {
+            "x": [vtkdata.GetPoint(i)[0] for i in range(vtkdata.GetNumberOfPoints())],
+            "y": [vtkdata.GetPoint(i)[1] for i in range(vtkdata.GetNumberOfPoints())],
+            "z": [vtkdata.GetPoint(i)[2] for i in range(vtkdata.GetNumberOfPoints())],
+            "strain": [
+                point_data.GetArray("strain").GetValue(i)
+                for i in range(vtkdata.GetNumberOfPoints())
+            ],
+            "disp": [
+                point_data.GetArray("disp").GetValue(i)
+                for i in range(vtkdata.GetNumberOfPoints())
+            ],
+        }
 
         # Get cell data
-        cellData = vtkdata.GetCellData()
+        cell_data = vtkdata.GetCellData()
 
         self.vtk_data["facet_probabilities"] = [
-            cellData.GetArray("FacetProbabilities").GetValue(i)
+            cell_data.GetArray("FacetProbabilities").GetValue(i)
             for i in range(vtkdata.GetNumberOfCells())
         ]
         self.vtk_data["facet_id"] = [
-            cellData.GetArray("FacetIds").GetValue(i)
+            cell_data.GetArray("FacetIds").GetValue(i)
             for i in range(vtkdata.GetNumberOfCells())
         ]
         self.vtk_data["x0"] = [
@@ -209,9 +237,8 @@ class Facets:
         print("Number of facets = %s" % str(self.nb_facets))
 
         # Get means
-        facet_indices = np.arange(
-            1, int(self.nb_facets) + 1, 1
-        )  # indices from 1 to n_facets
+        facet_indices = np.arange(1, int(self.nb_facets) + 1, 1)
+        # indices from 1 to n_facets
 
         strain_mean = np.zeros(self.nb_facets)  # stored later in field data
         strain_std = np.zeros(self.nb_facets)  # stored later in field data
@@ -232,49 +259,49 @@ class Facets:
 
         # Get field data
         self.field_data = pd.DataFrame()
-        fieldData = vtkdata.GetFieldData()
+        field_data = vtkdata.GetFieldData()
 
         self.field_data["facet_id"] = [
-            fieldData.GetArray("FacetIds").GetValue(i) for i in range(self.nb_facets)
+            field_data.GetArray("FacetIds").GetValue(i) for i in range(self.nb_facets)
         ]
         self.field_data["strain_mean"] = strain_mean
         self.field_data["strain_std"] = strain_std
         self.field_data["disp_mean"] = disp_mean
         self.field_data["disp_std"] = disp_std
         self.field_data["n0"] = [
-            fieldData.GetArray("facetNormals").GetValue(3 * i)
+            field_data.GetArray("facetNormals").GetValue(3 * i)
             for i in range(self.nb_facets)
         ]
         self.field_data["n1"] = [
-            fieldData.GetArray("facetNormals").GetValue(3 * i + 1)
+            field_data.GetArray("facetNormals").GetValue(3 * i + 1)
             for i in range(self.nb_facets)
         ]
         self.field_data["n2"] = [
-            fieldData.GetArray("facetNormals").GetValue(3 * i + 2)
+            field_data.GetArray("facetNormals").GetValue(3 * i + 2)
             for i in range(self.nb_facets)
         ]
         self.field_data["c0"] = [
-            fieldData.GetArray("FacetCenters").GetValue(3 * i)
+            field_data.GetArray("FacetCenters").GetValue(3 * i)
             for i in range(self.nb_facets)
         ]
         self.field_data["c1"] = [
-            fieldData.GetArray("FacetCenters").GetValue(3 * i + 1)
+            field_data.GetArray("FacetCenters").GetValue(3 * i + 1)
             for i in range(self.nb_facets)
         ]
         self.field_data["c2"] = [
-            fieldData.GetArray("FacetCenters").GetValue(3 * i + 2)
+            field_data.GetArray("FacetCenters").GetValue(3 * i + 2)
             for i in range(self.nb_facets)
         ]
         self.field_data["interplanar_angles"] = [
-            fieldData.GetArray("interplanarAngles").GetValue(i)
+            field_data.GetArray("interplanarAngles").GetValue(i)
             for i in range(self.nb_facets)
         ]
         self.field_data["abs_facet_size"] = [
-            fieldData.GetArray("absFacetSize").GetValue(i)
+            field_data.GetArray("absFacetSize").GetValue(i)
             for i in range(self.nb_facets)
         ]
         self.field_data["rel_facet_size"] = [
-            fieldData.GetArray("relFacetSize").GetValue(i)
+            field_data.GetArray("relFacetSize").GetValue(i)
             for i in range(self.nb_facets)
         ]
 
@@ -295,11 +322,11 @@ class Facets:
 
     def set_rotation_matrix(
         self,
-        u0,
-        v0,
-        w0,
-        u,
-        v,
+        u0 : np.ndarray,
+        v0 : np.ndarray,
+        w0 : np.ndarray,
+        u : np.ndarray,
+        v : np.ndarray,
     ) -> None :
         """
         Define the rotation matrix.
@@ -307,12 +334,16 @@ class Facets:
         u and v should be the vectors perpendicular to two facets. The rotation matrix
         is then used if the argument rotate_particle is set to True in the method
         load_vtk.
+
         :param u0: numpy.ndarray, shape (3,) 
         :param v0: numpy.ndarray, shape (3,)
         :param w0: numpy.ndarray, shape (3,)
         :param u: numpy.ndarray, shape (3,)
         :param v: numpy.ndarray, shape (3,)
         """
+        # Check parameters
+        valid.valid_ndarray(arrays=(u0, v0, w0, u, v), shape=(3,))
+
         # Input theoretical values for three facets' normals
         self.u0 = u0
         self.v0 = v0
@@ -354,8 +385,8 @@ class Facets:
                 normals[e] = np.dot(self.rotation_matrix, normals[e])
         except AttributeError:
             print(
-                """You need to define the rotation matrix first if you want to rotate the particle.
-                Please choose vectors from the normals in field data"""
+                """You need to define the rotation matrix first if you want to rotate
+                the particle. Please choose vectors from the normals in field data"""
             )
 
         # Save the new normals
@@ -373,7 +404,7 @@ class Facets:
 
     def fixed_reference(
         self,
-        hkl_reference : Sequence[float, float, float] = (1, 1, 1),
+        hkl_reference : Tuple[float, float, float] = (1, 1, 1),
         plot : bool = True,
     ) -> None :
         """
@@ -383,6 +414,16 @@ class Facets:
          direction
         :param plot: True to see plots
         """
+        # Check parameters
+        valid.valid_container(
+            hkl_reference,
+            container_types=(tuple, list),
+            item_types=float,
+            length=3,
+            name="hkl_reference"
+        )
+        valid.valid_item(plot, allowed_types=bool, name="plot")
+
         self.hkl_reference = hkl_reference
         self.hkls = " ".join(str(e) for e in self.hkl_reference)
         self.planar_dist = self.lattice / np.sqrt(
@@ -460,7 +501,7 @@ class Facets:
                 "Interplanar angles between [111] and other possible facets",
                 fontsize=self.title_fontsize,
             )
-
+            # TODO: here, please define a default value for color
             for norm, (norm_str, angle) in zip(
                 normals, self.theoretical_angles.items()
             ):
@@ -496,10 +537,14 @@ class Facets:
 
     def test_vector(self, vec : np.ndarray) -> None :
         """
-        Computes value of a vector passed through the rotation matrix
-        :param vec: numpy ndarray of shape (1, 3).
+        Computes value of a vector passed through the rotation matrix.
+
+        :param vec: numpy ndarray of shape (3,).
          e.g. np.array([-0.833238, -0.418199, -0.300809])
         """
+        # Check parameter
+        valid.valid_ndarray(vec, shape=(3,), name="vec")
+
         try:
             print(np.dot(self.rotation_matrix, vec / np.linalg.norm(vec)))
         except AttributeError:
@@ -507,7 +552,7 @@ class Facets:
 
     def extract_facet(
             self,
-            facet_id,
+            facet_id : int,
             plot : bool = False,
             elev : int = 0,
             azim : int = 0,
@@ -520,13 +565,21 @@ class Facets:
         It extracts the facet direction [x, y, z], the strain component, the
         displacement and their means, and also plots it.
 
-        :param facet_id: id of facet in paraview, int
+        :param facet_id: id of facet in paraview
         :param plot: True to see plots:
         :param elev: elevation angle in the z plane (in degrees).
         :param azim: azimuth angle in the (x, y) plane (in degrees).
         :param output: True to return facet data
         :param save: True to save plot
         """
+        # Check parameters
+        valid.valid_item(facet_id, allowed_types=int, name="facet_id")
+        valid.valid_item(elev, allowed_types=int, name="elev")
+        valid.valid_item(azim, allowed_types=int, name="azim")
+        valid.valid_item(plot, allowed_types=bool, name="plot")
+        valid.valid_item(output, allowed_types=bool, name="output")
+        valid.valid_item(save, allowed_types=bool, name="save")
+
         # Retrieve voxels that correspond to that facet index
         voxel_indices = []
         for i, v in enumerate(self.vtk_data["facet_id"]):
@@ -537,15 +590,13 @@ class Facets:
 
         #
         voxel_indices_new = list(set(voxel_indices))
-        results = {}
-        results["x"], results["y"], results["z"] = (
-            np.zeros(len(voxel_indices_new)),
-            np.zeros(len(voxel_indices_new)),
-            np.zeros(len(voxel_indices_new)),
-        )
-        results["strain"], results["disp"] = np.zeros(len(voxel_indices_new)), np.zeros(
-            len(voxel_indices_new)
-        )
+        results = {
+            "x": np.zeros(len(voxel_indices_new)),
+            "y": np.zeros(len(voxel_indices_new)),
+            "z": np.zeros(len(voxel_indices_new)),
+            "strain": np.zeros(len(voxel_indices_new)),
+            "disp": np.zeros(len(voxel_indices_new))
+        }
 
         for j, v in enumerate(voxel_indices_new):
             results["x"][j] = self.vtk_data["x"][int(voxel_indices_new[j])]
@@ -617,8 +668,8 @@ class Facets:
 
     def view_particle(
         self,
-        facet_id_range,
-        elev_axis,
+        facet_id_range : Tuple[int, int],
+        elev_axis : str,
         show_edges_corners : bool,
         elev : int = 0,
         azim : int = 0,
@@ -626,15 +677,35 @@ class Facets:
         """
         Visualization of the nanocrystal.
 
-        x, y and z correspond to the frame used in paraview
-        before saving the facet analyser plugin data
+        x, y and z correspond to the frame used in paraview before saving the facet
+        analyser plugin data.
 
         :param elev: elevation angle in the z plane (in degrees).
         :param azim: azimuth angle in the (x, y) plane (in degrees).
-        :param facet_id_range:
-        :param elev_axis:
-        :param show_edges_corners:
+        :param facet_id_range: tuple of two facets numbers, facets with numbers between
+         these two values will be plotted (higher boundary is excluded)
+        :param elev_axis: "x", "y" or "z"
+        :param show_edges_corners: set it to True to plot also edges and corners
         """
+        # Check some parameters
+        valid.valid_container(
+            facet_id_range,
+            container_types=(tuple, list),
+            item_types=int,
+            length=2,
+            min_included=0,
+            name="facet_id_range"
+        )
+        valid.valid_item(elev, allowed_types=int, name="elev")
+        valid.valid_item(azim, allowed_types=int, name="azim")
+        valid.valid_item(
+            show_edges_corners,
+            allowed_types=bool,
+            name="show_edges_corners"
+        )
+        if elev_axis not in {"x", "y", "z"}:
+            raise ValueError(f"unsupported value for 'elev_axis': {elev_axis}")
+
         plt.close()
         fig = plt.figure(figsize=(15, 15))
         ax = fig.add_subplot(projection="3d")
@@ -654,27 +725,26 @@ class Facets:
             """
             # Retrieve voxels for each facet
             voxel_indices = []
-            for i, v in enumerate(self.vtk_data["facet_id"]):
-                if int(self.vtk_data["facet_id"][i]) == facet_id:
-                    voxel_indices.append(self.vtk_data["x0"][i])
-                    voxel_indices.append(self.vtk_data["y0"][i])
-                    voxel_indices.append(self.vtk_data["z0"][i])
+            for idx, _ in enumerate(self.vtk_data["facet_id"]):
+                if int(self.vtk_data["facet_id"][idx]) == facet_id:
+                    voxel_indices.append(self.vtk_data["x0"][idx])
+                    voxel_indices.append(self.vtk_data["y0"][idx])
+                    voxel_indices.append(self.vtk_data["z0"][idx])
 
             # Delete doubles
             voxel_indices_new = list(set(voxel_indices))
-            results = {}
-            results["x"], results["y"], results["z"] = (
-                np.zeros(len(voxel_indices_new)),
-                np.zeros(len(voxel_indices_new)),
-                np.zeros(len(voxel_indices_new)),
-            )
-            results["facet_id"] = np.zeros(len(voxel_indices_new))
+            results = {
+                "x": np.zeros(len(voxel_indices_new)),
+                "y": np.zeros(len(voxel_indices_new)),
+                "z": np.zeros(len(voxel_indices_new)),
+                "facet_id": np.zeros(len(voxel_indices_new)),
+            }
 
-            for j in enumerate(voxel_indices_new):
-                results["x"][j] = self.vtk_data["x"][int(voxel_indices_new[j])]
-                results["y"][j] = self.vtk_data["y"][int(voxel_indices_new[j])]
-                results["z"][j] = self.vtk_data["z"][int(voxel_indices_new[j])]
-                results["facet_id"][j] = facet_id
+            for idx, _ in enumerate(voxel_indices_new):
+                results["x"][idx] = self.vtk_data["x"][int(voxel_indices_new[idx])]
+                results["y"][idx] = self.vtk_data["y"][int(voxel_indices_new[idx])]
+                results["z"][idx] = self.vtk_data["z"][int(voxel_indices_new[idx])]
+                results["facet_id"][idx] = facet_id
 
             # Plot all the voxels with the color of their facet
             if elev_axis == "z":
@@ -732,7 +802,7 @@ class Facets:
                         [row.c1.values[0], row.c2.values[0], row.c0.values[0]]
                     )
 
-                if elev_axis == "y":
+                elif elev_axis == "y":
                     # Normal
                     n = np.array([row.n2.values[0], row.n0.values[0], row.n1.values[0]])
 
@@ -741,7 +811,7 @@ class Facets:
                         [row.c2.values[0], row.c0.values[0], row.c1.values[0]]
                     )
 
-                if elev_axis == "z":
+                else:  # "z":
                     # Normal
                     n = np.array([row.n0.values[0], row.n1.values[0], row.n2.values[0]])
 
@@ -767,7 +837,7 @@ class Facets:
 
     def plot_strain(
             self,
-            figsize : Sequence[float, float] = (12, 10),
+            figsize : Tuple[float, float] = (12, 10),
             elev : int = 0,
             azim : int = 0,
             save : bool = True
@@ -783,7 +853,21 @@ class Facets:
         :param azim: azimuth angle in the (x, y) plane (in degrees).
         :param save: True to save the figures
         """
+        # Check parameters
+        valid.valid_container(
+            figsize,
+            container_types=(tuple, list),
+            item_types=float,
+            length=2,
+            min_included=0,
+            name="figsize"
+        )
+        valid.valid_item(elev, allowed_types=int, name="elev")
+        valid.valid_item(azim, allowed_types=int, name="azim")
+        valid.valid_item(save, allowed_types=bool, name="save")
+
         # 3D strain
+        p = None
         fig_name = (
             "strain_3D_" + self.hkls + self.comment + "_" + str(self.strain_range)
         )
@@ -861,7 +945,7 @@ class Facets:
 
     def plot_displacement(
             self,
-            figsize: Sequence[float, float] = (12, 10),
+            figsize: Tuple[float, float] = (12, 10),
             elev : int = 0,
             azim : int = 0,
             save: bool = True
@@ -877,7 +961,21 @@ class Facets:
         :param azim: azimuth angle in the (x, y) plane (in degrees).
         :param save: True to save the figures
         """
+        # Check parameters
+        valid.valid_container(
+            figsize,
+            container_types=(tuple, list),
+            item_types=float,
+            length=2,
+            min_included=0,
+            name="figsize"
+        )
+        valid.valid_item(elev, allowed_types=int, name="elev")
+        valid.valid_item(azim, allowed_types=int, name="azim")
+        valid.valid_item(save, allowed_types=bool, name="save")
+
         # 3D displacement
+        p = None
         fig_name = "disp_3D_" + self.hkls + self.comment + "_" + str(self.disp_range)
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot(projection="3d")
@@ -951,8 +1049,11 @@ class Facets:
         """
         Plot strain and displacement evolution for each facet.
 
-        :param ncol: #ODO
+        :param ncol: number of columns in the plot
         """
+        # Check parameters
+        valid.valid_item(ncol, allowed_types=int, min_included=1, name="ncol")
+
         # 1D plot: average displacement vs facet index
         fig_name = "avg_disp_vs_facet_id_" + self.hkls + self.comment
         fig = plt.figure(figsize=(10, 6))
@@ -1051,7 +1152,7 @@ class Facets:
         # disp, strain & size vs angle planes,
         # change line style as a fct of the planes indices
         fig_name = "disp_strain_size_vs_angle_planes_" + self.hkls + self.comment
-        fig, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex=True, figsize=(10, 12))
+        fig, (ax0, ax1, ax2) = plt.subplots(3, 1, sharex="True", figsize=(10, 12))
 
         plt.xticks(fontsize=self.ticks_fontsize)
         plt.yticks(fontsize=self.ticks_fontsize)
@@ -1070,19 +1171,20 @@ class Facets:
         ax0.set_yticks(major_y_ticks)
         ax0.set_yticks(minor_y_ticks, minor=True)
 
-        for j, row in self.field_data.iterrows():
+        for _, row in self.field_data.iterrows():
             try:
                 lx, ly = (
                     float(row.legend.split()[0]),
                     float(row.legend.split()[1]),
                 )
-                if lx >= 0 and ly >= 0:
-                    fmt = "o"
-                if lx >= 0 and ly <= 0:
-                    fmt = "d"
-                if lx <= 0 and ly >= 0:
+                if lx >= 0:
+                    if ly >= 0:
+                        fmt = "o"
+                    else:
+                        fmt = "d"
+                elif ly >= 0:
                     fmt = "s"
-                if lx <= 0 and ly <= 0:
+                else:
                     fmt = "+"
             except AttributeError:
                 fmt = "+"
@@ -1117,19 +1219,20 @@ class Facets:
         ax1.set_yticks(major_y_ticks)
         ax1.set_yticks(minor_y_ticks, minor=True)
 
-        for j, row in self.field_data.iterrows():
+        for _, row in self.field_data.iterrows():
             try:
                 lx, ly = (
                     float(row.legend.split()[0]),
                     float(row.legend.split()[1]),
                 )
-                if lx >= 0 and ly >= 0:
-                    fmt = "o"
-                if lx >= 0 and ly <= 0:
-                    fmt = "d"
-                if lx <= 0 and ly >= 0:
+                if lx >= 0:
+                    if ly >= 0:
+                        fmt = "o"
+                    else:
+                        fmt = "d"
+                elif ly >= 0:
                     fmt = "s"
-                if lx <= 0 and ly <= 0:
+                else:
                     fmt = "+"
             except AttributeError:
                 fmt = "+"
@@ -1156,22 +1259,7 @@ class Facets:
         ax2.set_yticks(major_y_ticks)
         ax2.set_yticks(minor_y_ticks, minor=True)
 
-        for j, row in self.field_data.iterrows():
-            try:
-                lx, ly = (
-                    float(row.legend.split()[0]),
-                    float(row.legend.split()[1]),
-                )
-                if lx >= 0 and ly >= 0:
-                    fmt = "o"
-                if lx >= 0 and ly <= 0:
-                    fmt = "d"
-                if lx <= 0 and ly >= 0:
-                    fmt = "s"
-                if lx <= 0 and ly <= 0:
-                    fmt = "+"
-            except AttributeError:
-                fmt = "+"
+        for _, row in self.field_data.iterrows():
             ax2.plot(
                 row["interplanar_angles"],
                 row["rel_facet_size"],
@@ -1221,6 +1309,9 @@ class Facets:
 
         :param path_to_data: path where to save the data
         """
+        # Check parameters
+        valid.valid_item(path_to_data, allowed_types=str, name="path_to_data")
+
         # Save field data
         self.field_data.to_csv(path_to_data, index=False)
 
@@ -1232,6 +1323,9 @@ class Facets:
 
         :param path_to_data: path where to save the data
         """
+        # Check parameters
+        valid.valid_item(path_to_data, allowed_types=str, name="path_to_data")
+
         # Save attributes
         with h5py.File(path_to_data, mode="a") as f:
             try:
