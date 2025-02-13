@@ -216,51 +216,56 @@ class Facets:
         self.logger.info(f"Number of points = {vtkdata.GetNumberOfPoints()}")
         self.logger.info(f"Number of cells = {vtkdata.GetNumberOfCells()}")
 
+        # Get voxel positions
+        self.vtk_data = {
+            "x": [
+                vtkdata.GetPoint(i)[0] for i in range(vtkdata.GetNumberOfPoints())
+            ],
+            "y": [
+                vtkdata.GetPoint(i)[1] for i in range(vtkdata.GetNumberOfPoints())
+            ],
+            "z": [
+                vtkdata.GetPoint(i)[2] for i in range(vtkdata.GetNumberOfPoints())
+            ]
+        }
+
+        # Get strain array
         try:
-            self.vtk_data = {
-                "x": [
-                    vtkdata.GetPoint(i)[0] for i in range(vtkdata.GetNumberOfPoints())
-                ],
-                "y": [
-                    vtkdata.GetPoint(i)[1] for i in range(vtkdata.GetNumberOfPoints())
-                ],
-                "z": [
-                    vtkdata.GetPoint(i)[2] for i in range(vtkdata.GetNumberOfPoints())
-                ],
-                "strain": [
+            self.vtk_data["strain"] = [
                     point_data.GetArray("strain").GetValue(i)
                     for i in range(vtkdata.GetNumberOfPoints())
-                ],
-                "disp": [
+                ]
+        except AttributeError:
+            # cdiutils data, strain is renamed to het_strain
+            self.vtk_data["strain"] = [
+                    point_data.GetArray("het_strain").GetValue(i)
+                    for i in range(vtkdata.GetNumberOfPoints())
+                ]
+
+        # Get displacement array
+        try:
+            self.vtk_data["disp"] = [
                     point_data.GetArray("disp").GetValue(i)
                     for i in range(vtkdata.GetNumberOfPoints())
-                ],
-            }
-
+                ]
             self.phase_or_disp = "disp"
 
         except AttributeError:
-            self.vtk_data = {
-                "x": [
-                    vtkdata.GetPoint(i)[0] for i in range(vtkdata.GetNumberOfPoints())
-                ],
-                "y": [
-                    vtkdata.GetPoint(i)[1] for i in range(vtkdata.GetNumberOfPoints())
-                ],
-                "z": [
-                    vtkdata.GetPoint(i)[2] for i in range(vtkdata.GetNumberOfPoints())
-                ],
-                "strain": [
-                    point_data.GetArray("strain").GetValue(i)
-                    for i in range(vtkdata.GetNumberOfPoints())
-                ],
-                "phase": [
-                    point_data.GetArray("phase").GetValue(i)
-                    for i in range(vtkdata.GetNumberOfPoints())
-                ],
-            }
+            try:
+                # cdiutils data, disp is renamed to displacement
+                self.vtk_data["disp"] = [
+                        point_data.GetArray("displacement").GetValue(i)
+                        for i in range(vtkdata.GetNumberOfPoints())
+                    ]
+                self.phase_or_disp = "disp"
 
-            self.phase_or_disp = "phase"
+            except AttributeError:
+                # still bcdi data, no disp array but a phase array
+                self.vtk_data["phase"] = [
+                        point_data.GetArray("phase").GetValue(i)
+                        for i in range(vtkdata.GetNumberOfPoints())
+                    ]
+                self.phase_or_disp = "phase"
 
         # Get cell data
         cell_data = vtkdata.GetCellData()
